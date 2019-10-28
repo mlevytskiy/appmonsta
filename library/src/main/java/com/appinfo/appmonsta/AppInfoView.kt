@@ -1,8 +1,11 @@
 package com.appinfo.appmonsta
 
 import android.content.Context
+import android.content.pm.ApplicationInfo
+import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.drawable.Drawable
+import android.os.Parcelable
 import android.util.AttributeSet
 import android.view.Gravity.CENTER
 import android.view.View
@@ -15,6 +18,7 @@ import com.bumptech.glide.load.engine.GlideException
 import com.bumptech.glide.request.RequestListener
 import com.bumptech.glide.request.target.Target
 import org.jsoup.Jsoup
+import java.lang.Exception
 
 class AppInfoView(context: Context, attrs: AttributeSet) : LinearLayout(context, attrs) {
 
@@ -30,36 +34,47 @@ class AppInfoView(context: Context, attrs: AttributeSet) : LinearLayout(context,
         imageView = view.findViewById(R.id.image_view)
     }
 
-    fun syncLoadAppInfo(appPackage: String): AppInfoModel {
+//    override fun onSaveInstanceState(): Parcelable {
+//        return super.onSaveInstanceState()
+//
+//    }
+//
+//    override fun onRestoreInstanceState(state: Parcelable) {
+//        super.onRestoreInstanceState(state)
+//    }
+
+    fun syncLoadAppInfo(appPackage: String): AppInfoModel? {
         val url = AppmonstaRequest().packageName(appPackage).getUrl()
-        val doc = Jsoup.connect(url).get()
+        try {
+            val doc = Jsoup.connect(url).get()
+            val metaElements = doc.select("meta[property=og:title]")
+            var title = ""
+            metaElements.singleOrNull()?.let {
+                title = it.attr("content")
+            }
 
-//        val bigTitle = doc.select("h1[itemprop]=name")
-//        val titleElement = bigTitle.select("span[content]")
-//        val titleStr = titleElement.attr("content")
-//        titleStr?.let {
-//            title = titleStr
-//        }
-
-        val metaElements = doc.select("meta[property=og:title]")
-        var title = ""
-        metaElements.singleOrNull()?.let {
-            title = it.attr("content")
+            val images = doc.select("img[src]")
+            val appIcon = images.filter {
+                val url = it.absUrl("src")
+                url.startsWith("https://lh3.googleusercontent.com/")
+            }.find {
+                (it.attr("alt").contentEquals("Cover art"))
+            }?.absUrl("src")
+            appIcon?.let {
+                return AppInfoModel(title, appPackage, it)
+            } ?:run {
+                return AppInfoModel(title, appPackage, "")
+            }
+        } catch (e: Exception) {
+            return null
         }
+    }
 
-        val images = doc.select("img[src]")
-        val appIcon = images.filter {
-            val url = it.absUrl("src")
-            url.startsWith("https://lh3.googleusercontent.com/")
-        }.find {
-            (it.attr("alt").contentEquals("Cover art"))
-        }?.absUrl("src")
-        appIcon?.let {
-            return AppInfoModel(title, appPackage, it)
-        } ?:run {
-            return AppInfoModel(title, appPackage, "")
-        }
-
+    fun setModel(model: AppInfoModelFromPhone) {
+        textView.setText(model.appName)
+        textView.setTextColor(Color.BLACK)
+        imageView.setImageDrawable(model.imageDrawable)
+        imageView.setBackgroundColor(Color.TRANSPARENT)
     }
 
     fun setModel(model: AppInfoModel) {
@@ -88,6 +103,24 @@ class AppInfoView(context: Context, attrs: AttributeSet) : LinearLayout(context,
                 }
             })
             .into(imageView)
+    }
+
+    fun getAppInfoFromPhone(appPackage: String): AppInfoModelFromPhone? {
+        val pm = context.packageManager
+        var appInfo: ApplicationInfo?
+        try {
+            appInfo = pm.getApplicationInfo(appPackage, 0)
+        } catch (e: PackageManager.NameNotFoundException) {
+            appInfo = null
+        }
+        appInfo?.let {
+            val label = (pm.getApplicationLabel(appInfo) ?: "(unknown)").toString()
+            val icon = pm.getApplicationIcon(appInfo)
+
+            return AppInfoModelFromPhone(label, appPackage, icon)
+        } ?:run {
+            return null
+        }
     }
 
 }
